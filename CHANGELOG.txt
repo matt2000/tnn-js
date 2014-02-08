@@ -1,0 +1,3 @@
+2014-01-04
+---
+Initial, incomplete port of an unpublished Python Implementation, to Coffeescript.
