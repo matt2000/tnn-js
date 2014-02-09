@@ -24,7 +24,7 @@ class tnn.Net
 
   activate: (active = []) ->
     # Main Graph Update
-    # Update nodes with new value. The will in turn update their outgoing connections.
+    # Update nodes with new value. They will in turn update their outgoing connections.
     n.emit('incomingUpdate') for n in active
     @time += 1
     # Hacky debug output. @todo revise
@@ -82,19 +82,21 @@ class tnn.BaseNode extends events.EventEmitter
   tick: ->
     @debug = false
     @lastReal = @r
+    @updateProb()
     @r = 0.0
 
   # A String representation of the node state
   log: ->
+    r = @r.toString().substr(0,4)
     p = @p.toString().substr(0,4)
-    "#{@name}\t#{@type}\tr:#{@r}\tp:#{p}\ti:#{@i}"
+    i = @i.toString().substr(0,4)
+    "#{@name}\t#{@type}\tr:#{r}\tp:#{p}\ti:#{i}"
 
   # Calculate the current Real activation of this node. This is a separate
   # method from 'tick' because we might be able to skip it to save computations,
   # or it may be called multiple times within a discreet time step.
   update: () ->
     @updateReal()
-    @updateProb()
     @updateImag()
     n.emit('updateImag') for n in @incoming
     n.emit('incomingUpdate') for n in @outgoing
@@ -166,9 +168,8 @@ class tnn.MinNode extends tnn.AggregatorNode
   type: 'Min'
 
   updateReal: (callback = ->) ->
-    #@todo Needs conversion.
-    stimulation = [x.getReal() for x in @incoming]
-    @r = min(stimulation)
+    min = _.min(@incoming, (n) -> n.getReal())
+    @r = min.getReal() || 0
     callback()
     return @r
 
@@ -207,6 +208,7 @@ class tnn.DelayNode extends tnn.BaseNode
 
 
   tick: ->
+      @updateProb()
       @r = @stored.shift()
       @update()
 

@@ -49,8 +49,8 @@ testSequences = ->
   #Strannegard 2012 - Figure 8.
 
   net = new tnn.Net()
-  minL = new tnn.MinNode(net)
-  minR = new tnn.MinNode(net)
+  minL = new tnn.MinNode(net, null, null, "123")
+  minR = new tnn.MinNode(net, null, null, "124")
   a = new tnn.DelayNode(net, 2, [minL, minR])
   b = new tnn.DelayNode(net, 1, [minL, minR])
   c = new tnn.BaseNode(net, [minL])
@@ -85,4 +85,4 @@ testSequences = ->
 
 
 testDelayMath(true)
-#testSequences()
+testSequences()
