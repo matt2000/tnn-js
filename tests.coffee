@@ -12,14 +12,12 @@ testDelayMath = () ->
   b = new tnn.DelayNode(net, 3, [top], [], 'd3')
   c = new tnn.DelayNode(net, 2, [top], [], 'd2')
   d = new tnn.DelayNode(net, 1, [top], [], 'd1')
-  e = new tnn.MaxNode(net, [top], [], 'max')
+  e = new tnn.BaseNode(net, [top], [], 'd0')
   six = new tnn.BaseNode(net, [a], [], '6')
   times = new tnn.BaseNode(net, [b], [], '*')
   eight = new tnn.BaseNode(net, [c], [], '8')
   equals = new tnn.BaseNode(net, [d], [], '=')
   fortyeight = new tnn.BaseNode(net, [e], [], '48')
-
-  net.output()
 
   six.activate()
   times.activate()
@@ -29,10 +27,13 @@ testDelayMath = () ->
 
   net.output()
 
-  six.activate()
-  times.activate()
-  eight.activate()
-  equals.activate()
+  six.activate(1)
+  #net.output()
+  times.activate(1)
+  #net.output()
+  eight.activate(1)
+  #net.output()
+  equals.activate(1)
   net.tick(null)
 
   net.output()
@@ -47,18 +48,17 @@ testDelayMath = () ->
 testSequences = ->
   #Strannegard 2012 - Figure 8.
 
-  net = Net()
-  minL = MinNode(net)
-  minR = MinNode(net)
+  net = new tnn.Net()
+  minL = new tnn.MinNode(net)
+  minR = new tnn.MinNode(net)
   a = new tnn.DelayNode(net, 2, [minL, minR])
   b = new tnn.DelayNode(net, 1, [minL, minR])
-  c = new tnn.DelayNode(net, 0, [minL])
-  d = new tnn.DelayNode(net, 0, [minR])
+  c = new tnn.BaseNode(net, [minL])
+  d = new tnn.BaseNode(net, [minR])
   one = new tnn.BaseNode(net, [a], [], 'one')
   two = new tnn.BaseNode(net, [b], [], 'two')
   three = new tnn.BaseNode(net, [c], [], 'three')
   four = new tnn.BaseNode(net, [d], [], 'four')
-  net.updateSort()
 
 
   one.activate()

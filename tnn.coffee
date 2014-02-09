@@ -27,12 +27,16 @@ class tnn.Net
     # Update nodes with new value. The will in turn update their outgoing connections.
     n.emit('incomingUpdate') for n in active
     @time += 1
+    # Hacky debug output. @todo revise
+    if _.find(@nodes, (n) -> n.debug)
+      console.log "\nAfter update of " + active[0].name
+      @output()
     n.emit('tick') for n in @nodes
     return @nodes
 
   tick: (callback = ->) ->
     # This is mainly for test backward compatibility.
-    @activate(@nodes)
+    @activate()
     callback()
 
   output: () ->
@@ -73,25 +77,25 @@ class tnn.BaseNode extends events.EventEmitter
     @on 'updateImag', @updateImag
 
 
-  # These are htings this node needs to do on every time step, even if it is
+  # These are things this node needs to do on every time step, even if it is
   # not "active".
   tick: ->
-    if @debug
-      @net.output()
-      @debug = false
+    @debug = false
     @lastReal = @r
     @r = 0.0
 
   # A String representation of the node state
   log: ->
-    "#{@name}\t#{@type}\tr:#{@r}\ti:#{@i}"
+    p = @p.toString().substr(0,4)
+    "#{@name}\t#{@type}\tr:#{@r}\tp:#{p}\ti:#{@i}"
 
   # Calculate the current Real activation of this node. This is a separate
   # method from 'tick' because we might be able to skip it to save computations,
   # or it may be called multiple times within a discreet time step.
   update: () ->
-    @_real()
+    @updateReal()
     @updateProb()
+    @updateImag()
     n.emit('updateImag') for n in @incoming
     n.emit('incomingUpdate') for n in @outgoing
 
@@ -117,13 +121,12 @@ class tnn.BaseNode extends events.EventEmitter
     @debug = debug
     return @net.activate([this])
 
-  _real: (callback = ->) ->
+  updateReal: (callback = ->) ->
     `/*
     Calculate the Real Activation for this node.
     The exact calculation is usually different for each sub-type.
     */`
-    @r = 0.0
-    if @incoming.length is 0 or _.find(@incoming, (n) -> n.r > @threshold)
+    if @incoming.length is 0 or _.find(@incoming, (n) => n.r > @threshold)
       @r = 1.0
     callback()
     return @r
@@ -135,6 +138,7 @@ class tnn.BaseNode extends events.EventEmitter
     */`
     max = _.max(@outgoing, (n)-> n.i )
     @i = max.i
+    #console.log(@name +': Update Imag')
     callback()
 
   updateProb: ->
@@ -152,16 +156,16 @@ class tnn.AggregatorNode extends tnn.BaseNode
     Calculate the Imaginary Activation for aggregator node (Min, Max, Average). Per Definition 5.
     @todo Use Bayes Rule instead?
     */`
-    vals = [1.0]
+    vals = []
     vals.push(n.getReal() * n.p) for n in @incoming
-    @i = _.min(vals)
+    @i = _.min([1.0, _.sum(vals)])
     callback()
 
 
 class tnn.MinNode extends tnn.AggregatorNode
   type: 'Min'
 
-  _real: (callback = ->) ->
+  updateReal: (callback = ->) ->
     #@todo Needs conversion.
     stimulation = [x.getReal() for x in @incoming]
     @r = min(stimulation)
@@ -172,7 +176,7 @@ class tnn.MinNode extends tnn.AggregatorNode
 class tnn.MaxNode extends tnn.AggregatorNode
   type: 'Max'
 
-  _real: (callback = ->) ->
+  updateReal: (callback = ->) ->
     max = _.max @incoming, (n)-> n.getReal()
     @r = max.getReal() || 0
     callback()
@@ -181,11 +185,8 @@ class tnn.MaxNode extends tnn.AggregatorNode
 class tnn.AverageNode extends tnn.AggregatorNode
   type: 'Avg'
 
-  _real: (callback = ->) ->
-    sum = 0.0
-    for x in @incoming
-      sum += x.getReal()
-    @r = (sum / @incoming.length)
+  updateReal: (callback = ->) ->
+    @r = (_.sum(_.pluck(@incoming, 'r')) / @incoming.length)
     callback()
 
 class tnn.DelayNode extends tnn.BaseNode
@@ -204,14 +205,12 @@ class tnn.DelayNode extends tnn.BaseNode
     @type = 'Delay:' +n
     super(net, outgoing, incoming, name)
 
-  listen: ->
-    @on 'incomingUpdate', @update
-    @on 'updateImag', @updateImag
-    @on 'tick', ->
+
+  tick: ->
       @r = @stored.shift()
       @update()
 
-  _real: ->
+  updateReal: ->
     #Store highest Real Activation from incoming
     if @stored.length == @delay
       # We are calling this more than once in a discreet time step,
@@ -222,7 +221,7 @@ class tnn.DelayNode extends tnn.BaseNode
     @stored.push winner.getReal()
 
   log: ->
-    l = "#{@name}\t#{@type}\tr:#{@r}\ti:#{@i}"
+    l = super()
     for x in @stored
       x = 'und' if x == undefined
       l += " #{x},"
@@ -234,3 +233,6 @@ class tnn.DelayNode extends tnn.BaseNode
 _.sum = (list) ->
   _.reduce list, (a,b) ->
     return a + b
+
+_.any = (list, iterator = _.identity) ->
+  _.find(list, iterator)
