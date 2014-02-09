@@ -1,6 +1,7 @@
 # Implements Transparent Neural Networks (Strannegard 2012)
 # @todo finish Imaginary actiovation. Run tests.coffee for current state.
 
+
 _ = require 'underscore'
 events = require 'events'
 
@@ -10,10 +11,9 @@ class tnn.Net
   `/*
     Stores global values, like the clock, and passes global messages to nodes.
   */`
-  constructor: (debug_mode = false) ->
+  constructor: (@debug_mode = false) ->
     @time = 1
     @nodes = []
-    @debug_mode = debug_mode
 
   add: (node) ->
     # Wire up a new node to the net.
@@ -46,10 +46,11 @@ class tnn.Net
 
 class tnn.BaseNode extends events.EventEmitter
   # Base class for all Node types/labels. Suitable for Sensor nodes.
+  # Use @emit('method') to call methods that shoudl propogate updates ot connected nodes.
+  # Calling the method directly is possible, but not normally desirable.
 
-  constructor: (net, outgoing = [], incoming = [], name = '') ->
-    # We use `@prop || prop` in case this is called by child constructors.
-    @net = @net || net
+
+  constructor: (@net, outgoing = [], incoming = [], name = '') ->
     @incoming = []
     @outgoing = []
 
@@ -59,9 +60,11 @@ class tnn.BaseNode extends events.EventEmitter
     # @type is a unique, Human Readable label for the Node's class.
     @type = @type || 'Base'
     # @name is a Human-readable label for the particular Node.
+    # We use `@prop || prop` in case this is called by child constructors.
     @name = @name || name || @type
 
     @p = 0.0
+    @lastProb = 0.0
     @net.add(this)
     @threshold = @threshold || 0.5
 
@@ -72,17 +75,24 @@ class tnn.BaseNode extends events.EventEmitter
 
   listen: ->
     #Event to update when incoming nodes change
-    @on 'incomingUpdate', @update
+    @on 'incomingUpdate', ->
+      @update()
+      n.emit('incomingUpdate') for n in @outgoing
     @on 'tick', @tick
-    @on 'updateImag', @updateImag
+    @on 'updateImag', ->
+      @updateImag()
+      # Always propgate Imaginary Activation updates.
+      n.emit('updateImag') for n in @incoming
 
 
   # These are things this node needs to do on every time step, even if it is
-  # not "active".
+  # not "active". Only the Net should emit 'tick'.
   tick: ->
     @debug = false
     @lastReal = @r
+    @lastProb = @p
     @updateProb()
+    @emit('updateImag')
     @r = 0.0
 
   # A String representation of the node state
@@ -97,16 +107,7 @@ class tnn.BaseNode extends events.EventEmitter
   # or it may be called multiple times within a discreet time step.
   update: () ->
     @updateReal()
-    @updateImag()
-    n.emit('updateImag') for n in @incoming
-    n.emit('incomingUpdate') for n in @outgoing
 
-
-  getReal: ->
-    return @r
-
-  getLastReal: ->
-    return @lastReal
 
   addIn: (node) ->
     # An incoming node has connected.
@@ -145,7 +146,7 @@ class tnn.BaseNode extends events.EventEmitter
 
   updateProb: ->
     # Calculate the probability of Real Activation at time t + 1
-    @p += (@getReal() - @p) / @net.time
+    @p += (@r - @p) / @net.time
 
 
 class tnn.AggregatorNode extends tnn.BaseNode
@@ -159,7 +160,7 @@ class tnn.AggregatorNode extends tnn.BaseNode
     @todo Use Bayes Rule instead?
     */`
     vals = []
-    vals.push(n.getReal() * n.p) for n in @incoming
+    vals.push(n.r * n.p) for n in @incoming
     @i = _.min([1.0, _.sum(vals)])
     callback()
 
@@ -168,8 +169,8 @@ class tnn.MinNode extends tnn.AggregatorNode
   type: 'Min'
 
   updateReal: (callback = ->) ->
-    min = _.min(@incoming, (n) -> n.getReal())
-    @r = min.getReal() || 0
+    min = _.min(@incoming, (n) -> n.r)
+    @r = min.r || 0
     callback()
     return @r
 
@@ -178,8 +179,8 @@ class tnn.MaxNode extends tnn.AggregatorNode
   type: 'Max'
 
   updateReal: (callback = ->) ->
-    max = _.max @incoming, (n)-> n.getReal()
-    @r = max.getReal() || 0
+    max = _.max @incoming, (n)-> n.r
+    @r = max.r || 0
     callback()
 
 
@@ -192,38 +193,38 @@ class tnn.AverageNode extends tnn.AggregatorNode
 
 class tnn.DelayNode extends tnn.BaseNode
   `/*
-    Forwards its input after n time steps
+    Forwards its input after (int) @delay time steps
   */`
 
-  constructor: (net, n, outgoing = [], incoming = [], name = null) ->
-    @delay = n
+  constructor: (@net, @delay, outgoing = [], incoming = [], @name = '') ->
     @stored = []
+    @shifted = false
 
     # Fill the storage with 0's to start
     while @stored.length < @delay
       @stored.push(0.0)
-
-    @type = 'Delay:' +n
+    @type = 'Delay:' + @delay
     super(net, outgoing, incoming, name)
 
 
   tick: ->
-      @updateProb()
+      super()
       @r = @stored.shift()
-      @update()
+      @emit('incomingUpdate')
+
 
   updateReal: ->
     #Store highest Real Activation from incoming
-    if @stored.length == @delay
-      # We are calling this more than once in a discreet time step,
-      # because we shift'd when the clock tick'd.
-      test = @stored.pop()
+    if @stored.length >= @delay
+      # It's possible this can be called more than once in a discreet time step,
+      # so we need to remove old values pushed into the store.
+      @stored.pop()
 
-    winner = _.max(@incoming, (n) -> n.getReal())
-    @stored.push winner.getReal()
+    winner = _.max(_.pluck(@incoming, 'r'))
+    @stored.push(winner || 0)
 
   log: ->
-    l = super()
+    l = super
     for x in @stored
       x = 'und' if x == undefined
       l += " #{x},"
